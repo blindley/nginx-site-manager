@@ -5,6 +5,7 @@ import os
 import glob
 from pathlib import Path
 import subprocess
+import argparse
 
 NGINX_AVAILABLE = "/etc/nginx/sites-available"
 NGINX_ENABLED = "/etc/nginx/sites-enabled"
@@ -59,49 +60,56 @@ def disable_site(site_name):
     else:
         print(f"Site {site_name} not found in {NGINX_ENABLED}.")
 
-class ArgParser:
-    def __init__(self, argv):
-        self.argv = argv
+def create_site(server_name, listen):
+    config_template = f"""\
+server {{
+    listen {listen};
+    server_name {server_name};
 
-    def parse(self):
-        if len(self.argv) < 2:
-            usage()
+    location / {{
+        root /var/www/{server_name};
+        index index.html;
+    }}
 
-        action = self.argv[1]
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
 
-        if action not in ["enable", "disable", "list"]:
-            usage()
+    location = /50x.html {{
+        root /usr/share/nginx/html;
+    }}
+}}
+"""
+    config_path = os.path.join(NGINX_AVAILABLE, server_name)
 
-        if action in ["enable", "disable"]:
-            if len(self.argv) < 3:
-                print(f"Error: The '{action}' action requires a site pattern.")
-                usage()
-            site_pattern = self.argv[2]
-        else:
-            site_pattern = ""
+    if Path(config_path).exists():
+        print(f"Error: A configuration file already exists for '{server_name}'.")
+        sys.exit(1)
 
-        return {"action": action, "site_pattern": site_pattern}
+    with open(config_path, "w") as config_file:
+        config_file.write(config_template)
 
-def nginx_manage_site(action):
+    print(f"Created Nginx configuration for {server_name}.")
+
+def nginx_manage_site(args):
     try:
-        action = args["action"]
-
-        if action == "list":
+        if args.action == "list":
             list_sites()
-            return
+        elif args.action == "create":
+            create_site(args.server_name, args.listen)
+        elif args.action in ["enable", "disable"]:
+            site_pattern = args.site_pattern
+            matching_sites = get_matching_sites(site_pattern)
 
-        site_pattern = args["site_pattern"]
-        matching_sites = get_matching_sites(site_pattern)
+            for site in matching_sites:
+                site_name = Path(site).name
+                if args.action == "enable":
+                    enable_site(site_name)
+                elif args.action == "disable":
+                    disable_site(site_name)
+        else:
+            print(f"Invalid action: {action}. Use 'enable', 'disable', 'create', or 'list'.")
+            sys.exit(1)
 
-        for site in matching_sites:
-            site_name = Path(site).name
-            if action == "enable":
-                enable_site(site_name)
-            elif action == "disable":
-                disable_site(site_name)
-            else:
-                print(f"Invalid action: {action}. Use 'enable', 'disable', or 'list'.")
-                sys.exit(1)
 
         # Reload Nginx configuration
         subprocess.run(["sudo", "systemctl", "reload", "nginx"])
@@ -109,7 +117,29 @@ def nginx_manage_site(action):
     except PermissionError as e:
         print(f"Error: {e}. Please run the script with the necessary privileges.")
 
-if __name__ == "__main__":
-    arg_parser = ArgParser(sys.argv)
-    args = arg_parser.parse()
+def main():
+    parser = argparse.ArgumentParser(description="Nginx site manager")
+    subparsers = parser.add_subparsers(dest="action")
+
+    parser_enable = subparsers.add_parser("enable", help="Enable a site")
+    parser_enable.add_argument("site_pattern", help="Site name pattern")
+
+    parser_disable = subparsers.add_parser("disable", help="Disable a site")
+    parser_disable.add_argument("site_pattern", help="Site name pattern")
+
+    parser_list = subparsers.add_parser("list", help="List available sites")
+
+    parser_create = subparsers.add_parser("create", help="Create a new site")
+    parser_create.add_argument("server_name", help="Server name")
+    parser_create.add_argument("--listen", default="80", help="Listen address and port (default: 80)")
+
+    args = parser.parse_args()
+
+    if not args.action:
+        parser.print_help()
+        sys.exit(1)
+
     nginx_manage_site(args)
+
+if __name__ == "__main__":
+    main()
