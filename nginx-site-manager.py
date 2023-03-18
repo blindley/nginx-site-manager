@@ -10,14 +10,13 @@ import argparse
 NGINX_AVAILABLE = "/etc/nginx/sites-available"
 NGINX_ENABLED = "/etc/nginx/sites-enabled"
 
+class InvalidActionError(Exception):
+    pass
+
 class Colors:
     GREEN = "\033[32m" if sys.stdout.isatty() else ""
     RED = "\033[31m" if sys.stdout.isatty() else ""
     RESET = "\033[0m" if sys.stdout.isatty() else ""
-
-def usage():
-    print("Usage: nginx_manage_site.py [enable|disable|list] site_pattern")
-    sys.exit(1)
 
 def list_sites():
     print("Available sites:")
@@ -106,16 +105,16 @@ def nginx_manage_site(args):
                     enable_site(site_name)
                 elif args.action == "disable":
                     disable_site(site_name)
+
+            # Reload Nginx configuration
+            subprocess.run(["sudo", "systemctl", "reload", "nginx"])
         else:
-            print(f"Invalid action: {action}. Use 'enable', 'disable', 'create', or 'list'.")
-            sys.exit(1)
-
-
-        # Reload Nginx configuration
-        subprocess.run(["sudo", "systemctl", "reload", "nginx"])
+            raise InvalidActionError(f"Invalid action: {args.action}. Use 'enable', 'disable', 'create', or 'list'.")
 
     except PermissionError as e:
         print(f"Error: {e}. Please run the script with the necessary privileges.")
+    except InvalidActionError as e:
+        print(f"Error: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Nginx site manager")
