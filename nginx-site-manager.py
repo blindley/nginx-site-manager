@@ -89,25 +89,27 @@ server {{
 
     print(f"Created Nginx configuration for {server_name}.")
 
-def nginx_manage_site(args):
+def manage_site(action, site_pattern):
+    matching_sites = get_matching_sites(site_pattern)
+
+    for site in matching_sites:
+        site_name = Path(site).name
+        if action == "enable":
+            enable_site(site_name)
+        elif action == "disable":
+            disable_site(site_name)
+
+    # Reload Nginx configuration
+    subprocess.run(["sudo", "systemctl", "reload", "nginx"])
+
+def process_site_action(args):
     try:
         if args.action == "list":
             list_sites()
         elif args.action == "create":
             create_site(args.server_name, args.listen)
         elif args.action in ["enable", "disable"]:
-            site_pattern = args.site_pattern
-            matching_sites = get_matching_sites(site_pattern)
-
-            for site in matching_sites:
-                site_name = Path(site).name
-                if args.action == "enable":
-                    enable_site(site_name)
-                elif args.action == "disable":
-                    disable_site(site_name)
-
-            # Reload Nginx configuration
-            subprocess.run(["sudo", "systemctl", "reload", "nginx"])
+            manage_site(args.action, args.site_pattern)
         else:
             raise InvalidActionError(f"Invalid action: {args.action}. Use 'enable', 'disable', 'create', or 'list'.")
 
@@ -138,7 +140,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    nginx_manage_site(args)
+    process_site_action(args)
 
 if __name__ == "__main__":
     main()
